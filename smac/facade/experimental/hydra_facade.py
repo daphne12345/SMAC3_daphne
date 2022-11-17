@@ -52,9 +52,9 @@ class Hydra(object):
         The randomState/seed to pass to each smac run
     run_id: int
         run_id for this hydra run
-    tae: BaseRunner
+    tae_runner: BaseRunner
         Target Algorithm Runner (supports old and aclib format as well as AbstractTAFunc)
-    tae_kwargs: Optional[dict]
+    tae_runner_kwargs: Optional[dict]
         arguments passed to constructor of '~tae'
 
     Attributes
@@ -80,8 +80,8 @@ class Hydra(object):
         n_optimizers: int = 1,
         rng: typing.Optional[typing.Union[np.random.RandomState, int]] = None,
         run_id: int = 1,
-        tae: typing.Type[BaseRunner] = ExecuteTARunOld,
-        tae_kwargs: typing.Union[dict, None] = None,
+        tae_runner: typing.Type[BaseRunner] = ExecuteTARunOld,
+        tae_runner_kwargs: typing.Union[dict, None] = None,
         **kwargs,
     ):
         self.logger = logging.getLogger(self.__module__ + "." + self.__class__.__name__)
@@ -95,8 +95,8 @@ class Hydra(object):
         self.solver = None
         self.portfolio = None
         self.rh = RunHistory()
-        self._tae = tae
-        self._tae_kwargs = tae_kwargs
+        self._tae_runner = tae_runner
+        self._tae_runner_kwargs = tae_runner_kwargs
         if incs_per_round <= 0:
             self.logger.warning("Invalid value in %s: %d. Setting to 1", "incs_per_round", incs_per_round)
         self.incs_per_round = max(incs_per_round, 1)
@@ -177,37 +177,36 @@ class Hydra(object):
         # parent process SMAC only used for validation purposes
         self.solver = SMAC4AC(
             scenario=scen,
-            tae_runner=self._tae,
+            tae_runner=self._tae_runner,
             rng=self.rng,
             run_id=self.run_id,
             **self.kwargs,
-            tae_runner_kwargs=self._tae_kwargs,
+            tae_runner_kwargs=self._tae_runner_kwargs,
         )
         for i in range(self.n_iterations):
             self.logger.info("=" * 120)
             self.logger.info("Hydra Iteration: %d", (i + 1))
 
             if i == 0:
-                tae = self._tae
-                tae_kwargs = self._tae_kwargs
+                tae_runner = self._tae_runner
+                tae_runner_kwargs = self._tae_runner_kwargs
             else:
-                tae = ExecuteTARunHydra
-                if self._tae_kwargs:
-                    tae_kwargs = self._tae_kwargs
+                tae_runner = ExecuteTARunHydra
+                if self._tae_runner_kwargs:
+                    tae_runner_kwargs = self._tae_runner_kwargs
                 else:
-                    tae_kwargs = {}
-                tae_kwargs["cost_oracle"] = self.cost_per_inst
+                    tae_runner_kwargs = {}
+                tae_runner_kwargs["cost_oracle"] = self.cost_per_inst
             self.optimizer = PSMAC(
                 scenario=self.scenario,
                 run_id=self.run_id,
                 rng=self.rng,
-                tae=tae,
-                tae_kwargs=tae_kwargs,
+                tae_runner=tae_runner,
+                tae_runner_kwargs=tae_runner_kwargs,
                 shared_model=False,
                 validate=True if self.val_set else False,
-                n_optimizers=self.n_optimizers,
+                n_workers=self.n_optimizers,
                 val_set=self.val_set,
-                n_incs=self.n_optimizers,  # return all configurations (unvalidated)
                 **self.kwargs,
             )
             self.optimizer.output_dir = self.output_dir
