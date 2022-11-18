@@ -1,6 +1,6 @@
 # type: ignore
 # mypy: ignore-errors
-
+from __future__ import annotations
 import typing
 
 import copy
@@ -24,10 +24,6 @@ from smac.tae.base import BaseRunner
 from smac.tae.execute_ta_run_hydra import ExecuteTARunHydra, ExecuteTARunOld
 from smac.utils.constants import MAXINT
 from smac.utils.io.output_directory import create_output_directory
-
-__author__ = "Marius Lindauer"
-__copyright__ = "Copyright 2017, ML4AAD"
-__license__ = "3-clause BSD"
 
 
 class Hydra(object):
@@ -158,9 +154,11 @@ class Hydra(object):
             Portfolio of found configurations
 
         """
+        # Initialize portfolio
+        self.portfolio: list[Configuration] = []
+        portfolio_cost: float = np.inf
+
         # Setup output directory
-        self.portfolio = []
-        portfolio_cost = np.inf
         if self.output_dir is None:
             self.top_dir = "hydra-output_%s" % (
                 datetime.datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d_%H:%M:%S_%f")
@@ -171,32 +169,42 @@ class Hydra(object):
             )
             self.output_dir = create_output_directory(self.scenario, run_id=self.run_id, logger=self.logger)
 
-        scen = copy.deepcopy(self.scenario)
-        scen.output_dir_for_this_run = None
-        scen.output_dir = None
-        # parent process SMAC only used for validation purposes
+        
+
+        # Parent process SMAC only used for validation purposes
+        # Disable output directories for each single run bc it is
+        # just for validation
+        scenario = copy.deepcopy(self.scenario)
+        scenario.output_dir_for_this_run = None
+        scenario.output_dir = None
         self.solver = SMAC4AC(
-            scenario=scen,
+            scenario=scenario,
             tae_runner=self._tae_runner,
             rng=self.rng,
             run_id=self.run_id,
             **self.kwargs,
             tae_runner_kwargs=self._tae_runner_kwargs,
         )
+
+        # Build portfolio
         for i in range(self.n_iterations):
             self.logger.info("=" * 120)
             self.logger.info("Hydra Iteration: %d", (i + 1))
 
             if i == 0:
+                # Initialize portfolio
                 tae_runner = self._tae_runner
                 tae_runner_kwargs = self._tae_runner_kwargs
             else:
+                # Setup runner in hydra mode tracking the cost of the oracle
                 tae_runner = ExecuteTARunHydra
                 if self._tae_runner_kwargs:
                     tae_runner_kwargs = self._tae_runner_kwargs
                 else:
                     tae_runner_kwargs = {}
                 tae_runner_kwargs["cost_oracle"] = self.cost_per_inst
+
+            # Setup optimizer
             self.optimizer = PSMAC(
                 scenario=self.scenario,
                 run_id=self.run_id,
@@ -210,7 +218,11 @@ class Hydra(object):
                 **self.kwargs,
             )
             self.optimizer.output_dir = self.output_dir
+
+            # Optimize -> Get n best configurations to propose for portfolio
             incs = self.optimizer.optimize()
+
+            
             (
                 cost_per_conf_v,
                 val_ids,
